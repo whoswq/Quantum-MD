@@ -127,13 +127,12 @@ return: double
 */
 double V_potential(vector<double> x)
 {
-    //首先尝试一下谐振子
-    double x_2 = 0;
+    double x_4 = 0;
     for (int j = 0; j < x.size(); j++)
     {
-        x_2 += x[j] * x[j];
+        x_4 += x[j] * x[j] * x[j] * x[j];
     }
-    return 0.5 * x_2;
+    return 0.25 * x_4;
 }
 
 /*
@@ -180,7 +179,7 @@ vector<double> nabla_V_potential(vector<double> x)
 
     for (int j = 0; j < x.size(); j++)
     {
-        f.push_back(x[j]);
+        f.push_back(x[j] * x[j] * x[j]);
     }
     return f;
 }
@@ -281,6 +280,8 @@ estimator: func 估计量
 config_list: K * P * N 给定的一定数量的构型分布，只包含各个beads的位置信息，不包含动量，
              staging坐标，但是estimator往往是定义在Cartesian坐标下，注意转换
 return: double
+
+// 注意这里传递参数尽量传递引用
 */
 double ensemble_average(vector<vector<vector<double>>> &config_list, double (&estimator)(vector<vector<double>>, double beta), double beta)
 {
@@ -436,7 +437,7 @@ vector<vector<vector<double>>> BAOAB(vector<vector<vector<double>>> pre, double 
         }
         else
         {
-            for (int k = 1; k < n; k++)
+            for (int k = 0; k < n; k++)
             {
                 s_chain[j][k] = s_chain[j][k] * cos(omega_p * dt / 2) + 1 / omega_p * sin(omega_p * dt / 2) * j / ((j + 1) * M[k][k]) * p_chain[j][k];
                 p_chain[j][k] = -omega_p * sin(omega_p * dt / 2) * (j + 1) / j * M[k][k] * s_chain[j][k] + cos(omega_p * dt / 2) * p_chain[j][k];
@@ -476,7 +477,7 @@ vector<vector<vector<double>>> BAOAB(vector<vector<vector<double>>> pre, double 
         }
         else
         {
-            for (int k = 1; k < n; k++)
+            for (int k = 0; k < n; k++)
             {
                 s_chain[j][k] = s_chain[j][k] * cos(omega_p * dt / 2) + 1 / omega_p * sin(omega_p * dt / 2) * j / ((j + 1) * M[k][k]) * p_chain[j][k];
                 p_chain[j][k] = -omega_p * sin(omega_p * dt / 2) * (j + 1) / j * M[k][k] * s_chain[j][k] + cos(omega_p * dt / 2) * p_chain[j][k];
@@ -529,7 +530,7 @@ double temperature(vector<vector<vector<double>>> &p_list)
         }
     }
     e = e / (n * p * K);
-    return 1 / e;
+    return e;
 }
 
 int main()
@@ -545,19 +546,20 @@ int main()
     cin >> total_steps;
 
     stringstream fmt1;
-    fmt1 << "cl_harmonic_oscillator_P_64"
+    fmt1 << "quartic_P_64"
          << ".txt";
     ofstream OutFile1(fmt1.str());
 
     stringstream fmt2;
-    fmt2 << "cl_harmonic_oscillator_P_64_temperature"
+    fmt2 << "quartic_P_64_temperature"
          << ".txt";
     ofstream OutFile2(fmt2.str());
 
     double start = GetTickCount(); // 开始计时
     for (int t = 0; t < 100; t++)
     {
-        beta = 0.25 + (double)t / 10;
+        double T = 0.1 + (double)t / 10;
+        beta = 1 / T;
         vector<double> x_i(N, 0.05);
         vector<vector<double>> x(P, x_i);
         vector<double> p_i(N, 0);
@@ -566,13 +568,12 @@ int main()
         cout << "-----------BEGIN STEP-----------" << endl;
         cout << "the dimension of the system " << N << endl;
         cout << "the number of beads " << P << endl;
+        cout << "the temperature of the system is " << T << endl;
         cout << "initial positon in Cartesian coordinate:" << endl;
         print_vector_2(x);
         cout << "initial momentum in Cartesian coordinate: " << endl;
         print_vector_2(p);
         vector<vector<double>> s = staging_transformation(x);
-        cout << "initial position in staging coordinate:" << endl;
-        print_vector_2(s);
 
         vector<vector<vector<double>>> s_p = {x, p};
         vector<vector<vector<double>>> p_list;
@@ -590,7 +591,7 @@ int main()
             {
                 OutFile2 << std::setiosflags(std::ios::scientific | std::ios::showpos) << temperature(p_list) << " ";
             }
-            s_p = OBABO(s_p, 0.02, beta);
+            s_p = BAOAB(s_p, 0.1*sqrt(P), beta);
         }
         OutFile2 << endl;
 
@@ -598,12 +599,12 @@ int main()
         OutFile1 << beta << " ";
 
         double KE_primitive = ensemble_average(s_list, kinetic_energy_primitive, beta);
-        cout << "the kinetic energy(primitive) at " << beta << " is: ";
+        cout << "the kinetic energy(primitive) at " << T << " is: ";
         cout << std::setiosflags(std::ios::scientific | std::ios::showpos) << KE_primitive << endl;
         OutFile1 << KE_primitive << " ";
 
         double KE_viral = ensemble_average(s_list, kinetic_energy_viral, beta);
-        cout << "the kinetic energy(viral) at " << beta << " is: ";
+        cout << "the kinetic energy(viral) at " << T << " is: ";
         cout << KE_viral << endl;
         OutFile1 << std::setiosflags(std::ios::scientific | std::ios::showpos) << KE_viral << " ";
 

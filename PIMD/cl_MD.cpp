@@ -18,29 +18,27 @@ using std::ofstream;
 using std::string;
 using std::stringstream;
 using std::to_string;
-using std::vector;
 
-// 为了找出PIMD程序的问题，写一个md程序
+// 关于时间关联函数的一些模拟，暂时局限于一维体系
 
-int N = 1; // 系统的自由度
-//vector<vector<double>> M = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}; // 质量矩阵
-vector<vector<double>> M = {{1}};
+const int N = 1;                 // 系统的总自由度
+const double M = 1;              // 质量矩阵的对角元
+const double M_inv = 1;          // 质量矩阵逆的对角元
+const double dt = 0.02;          // 时间间隔
+const double gamma = 0.5;        // 摩擦系数 怎么选择比较合适？
+const int total_steps = 1000000; // 总步长
+const double x_0 = 1.5;
+double x = 0;
+double p = 0;
+double nabla_V[N] = {0}; // 储存中间变量
+
 unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
 std::default_random_engine generator(seed);
 // 第一个参数为高斯分布的平均值，第二个参数为标准差
 std::normal_distribution<double> distribution(0.0, 1.0);
 
-void print_vector_1(vector<double> vec)
-{
-    cout << "[";
-    for (int i = 0; i < vec.size(); i++)
-    {
-        cout << vec[i] << " ,";
-    }
-    cout << "]" << endl;
-}
-
-void print_vector_2(vector<vector<double>> vec)
+/*
+void print_vector_2(double vec)
 {
     cout << "[";
     for (int i = 0; i < vec.size(); i++)
@@ -54,20 +52,16 @@ void print_vector_2(vector<vector<double>> vec)
     }
     cout << "]" << endl;
 }
+*/
 
 /*
-Cartesian坐标下真实的势能函数
+简谐势能
 x: vector<double> Cartesian坐标
 return: double
 */
-double V_potential(vector<double> x)
+double V_harmonic(double(&x))
 {
-    double x_2 = 0;
-    for (int j = 0; j < x.size(); j++)
-    {
-        x_2 += x[j] * x[j];
-    }
-    return 0.5 * x_2;
+    return 0.5 * (x - x_0) * (x - x_0);
 }
 
 /*
@@ -75,17 +69,15 @@ Cartesian坐标下真实势能的梯度
 x: vector<double> Cartesian坐标
 return: vector<double> 势能的梯度
 */
-vector<double> nabla_V_potential(vector<double> x)
+void nabla_V_potential(double(&x))
 {
-    vector<double> f;
-
-    for (int j = 0; j < x.size(); j++)
-    {
-        f.push_back(x[j]);
-    }
-    return f;
+    nabla_V = x;
 }
 
+/*
+
+
+*/
 /*
 以BAOAB的方式演化Langevin方程
 pre: 2*N维列表，pre[0]代表位置，pre[1]代表动量
@@ -93,10 +85,10 @@ dt: double 时间步长
 gama: double Langevin动力学中的阻力常数
 return: 2*N维列表，表示位置和动量
 */
-vector<vector<double>> BAOAB(vector<vector<double>> pre, double dt, double gama = 0.5, double beta = 1)
+double BAOAB(double pre, double dt, double gama = 0.5, double beta = 1)
 {
     // 首先定义一些量
-    vector<vector<double>> nxt;
+    double nxt;
     int n = pre[0].size(); // 空间维数
     // 定义了在O过程中出现的两个常数
     double c1 = exp(-gama * dt);
@@ -155,7 +147,7 @@ c_list: 所有构型的列表
 estimator: 估计量
 return: 平均值
 */
-double ensemble_average(vector<vector<double>>(&c_list), double (&estimator)(vector<double>))
+double ensemble_average(double(&c_list), double (&estimator)(vector<double>))
 {
     int tot = c_list.size();
     double average = 0;
@@ -166,63 +158,8 @@ double ensemble_average(vector<vector<double>>(&c_list), double (&estimator)(vec
     return average / tot;
 }
 
-/*
-平均动能
-不明原因导致ensemble_average()运行很慢，重写对应的函数
-*/
-/*
-double average_kinetic_energy(vector<vector<double>> c_list){
-    
-}
-*/
-
 int main()
 {
-    cout << "----------the program begins----------" << endl;
-    vector<double> x_init = {1};
-    vector<double> p_init = {0};
-    vector<vector<double>> x_p = {x_init, p_init};
-    vector<vector<double>> x_list;
-    vector<vector<double>> p_list;
-    cout << "the initial condition is: " << endl;
-    print_vector_2(x_p);
-    /*  将轨线储存为文件
-    stringstream fmt1;
-    fmt1 << "cl_MD_test"
-         << ".txt";
-    ofstream OutFile1(fmt1.str());
-    */
-    int total_steps; // 演化的步数
-    cout << "total steps = ?" << endl;
-    cin >> total_steps;
-    double beta; // 系统设定的温度
-    cout << "beta = ?" << endl;
-    cin >> beta;
-    double gama; // 系统的阻力系数
-    cout << "gamma = ?" << endl;
-    cin >> gama;
-    double start = GetTickCount(); // 开始计时
-    for (int i = 0; i < total_steps; i++)
-    {
-        x_list.push_back(x_p[0]);
-        p_list.push_back(x_p[0]);
-        //OutFile1 << x_p[0][0] << ", " << x_p[1][0]
-        //         << "\n";
-        if (i % 1000 == 0)
-        {
-            cout << i << " steps, " << GetTickCount() - start << "ms has been used, total steps are " << total_steps << endl;
-        }
-        x_p = BAOAB(x_p, 0.01, gama, beta);
-    }
-    double k_e = ensemble_average(p_list, kinetic_energy);
-    double v_e = ensemble_average(x_list, V_potential);
-    cout
-        << "---------------RESULT---------------" << endl;
-    cout << "the kinetic enenrgy of the system is " << k_e << endl;
-    cout << "the potential energy of the system is " << v_e << endl;
-    cout << "total time is " << GetTickCount() - start << " ms" << endl;
-    cout << "---------------END---------------" << endl;
-
     double i;
     cin >> i;
     return 0;
