@@ -493,7 +493,7 @@ int main()
         }
         if (i >= PIMD_steps - n_traj):
             {
-                traj[i - PIMD_steps - n_traj] = x_array;
+                traj[i - PIMD_steps + n_traj] = x_array;
             } // 储存了空间构型，相当于对对积分中空间构型的采样
     }
     cout << "temperature of the system is " << T << ", ";
@@ -511,10 +511,10 @@ int main()
     cout << "-----------BEIGN--REAL--TIME--DYNAMICS-------" << endl;
     for (int k = 0, k < n_traj; k++)
     {
-        double p_init[N] = {0};
+        double p_init[N] = {0};  // 构造初始动量
         for (int r = 0; r < N; r++)
         {
-            p_init[r] =
+            p_init[r] = 
         }
     }
 
