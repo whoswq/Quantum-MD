@@ -8,7 +8,7 @@
 #include <sstream>
 #include <stdlib.h>
 #include <string>
-#include <windows.h>
+
 
 //using namespace std;
 using std::cin;
