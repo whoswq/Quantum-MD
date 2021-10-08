@@ -13,6 +13,11 @@ omega_P = np.sqrt(P) / (beta * hbar)  # the frequency of internal force
 dt = 0.1 / omega_P  # time step
 M = np.array([])  # mass matrix
 M_inv = np.array([])
+# params of morse potential
+De = 20
+alpha = 2.0
+r_eq = 2.5
+# 选定一个标准的平衡构型
 
 
 def Morse_potential(x):
@@ -22,9 +27,6 @@ def Morse_potential(x):
     return: double
     """
     # Morse势的参数
-    De = 20
-    alpha = 2.0
-    r_eq = 2.5
     q = 1 - np.exp(-alpha * (liag.norm(x) - r_eq))
     return De * q * q
 
@@ -35,16 +37,30 @@ def nabla_Morse_potential(x):
     x: 1d array length=N coordinate
     return: 1d array length=N
     """
-    pass
+    r = np.sqrt(x[0] * x[0] + x[1] * x[1] + x[2] * x[2])
+    exp_a = np.exp(-alpha * (r - r_eq))
+    fractor = 2 * De * alpha * (1 - exp_a) * exp_a / r
+    return np.array([fractor * x[0], fractor * x[1], fractor * x[2]])
 
 
-def Hessian_Morse_potential(x):
+def Hessian_Morse_potential(x, dx=0.01):
     """
     the hessian matrix of Morse potential at x
+    由于计算导数的解析表达式过于复杂，考虑使用中心差分计算高阶导数
     x: 1d array length=N coordinate
     return 2d array N*N
     """
-    pass
+    a0 = nabla_Morse_potential((x[0] + dx, x[1], x[2]))
+    b0 = nabla_Morse_potential((x[0] - dx, x[1], x[2]))
+    a1 = nabla_Morse_potential((x[0], x[1] + dx, x[2]))
+    b1 = nabla_Morse_potential((x[0], x[1] - dx, x[2]))
+    a2 = nabla_Morse_potential((x[0], x[1], x[2] + dx))
+    b2 = nabla_Morse_potential((x[0], x[1], x[2] - dx))
+    return np.array([
+        [(a0[i] - b0[i]) / (2*dx) for i in range(3)],
+        [(a1[i] - b1[i]) / (2*dx) for i in range(3)],
+        [(a2[i] - b2[i]) / (2*dx) for i in range(3)]
+    ])
 
 
 def staging_transf(x_array):
@@ -143,16 +159,15 @@ d1 = np.cos(omega_P * dt * 0.5)
 d2 = np.sin(omega_P * dt * 0.5)
 
 
-def BAOAB(pre):
+def BAOAB(s_array, p_array, nabla_potential):
     """
     使用BAOAB的算法演化Lagevin方程
     pre: 前一个时刻的位置和动量 staging坐标下
     return: 下一个时刻的位置和动量 staging坐标下
     """
-    s_array = pre[0]
-    p_array = pre[1]
     # 首先演化半步动量
-    p_array = p_array - nabla_phi_potential(s_array) * dt * 0.5
+    p_array = p_array - \
+        nabla_phi_potential(s_array, nabla_potential) * dt * 0.5
     # 其次演化半步内势力
     s_array[0] = s_array[0] + M_inv * p_array[0] * dt * 0.5  # 注意质量矩阵与动量对应元素相乘
     for j in range(1, P):
@@ -174,51 +189,8 @@ def BAOAB(pre):
             omega_P * dt * 0.5) * p_array[j]
         s_array[j] = s_j
     # 最后演化半步动量
-    p_array = p_array - nabla_phi_potential(s_array) * dt * 0.5
-
-    return s_array, p_array
-
-
-# 记录一些演化时会用到的变量
-o1 = np.exp(-omega_P * dt * 0.5)
-o2 = np.sqrt((1 - c1 * c1) / beta)
-
-
-def OABAO(s_array, p_array):
-    """
-    使用OABAO的算法演化Lagevin方程
-    pre: numpy 3-D array 前一个时刻的位置和动量 staging坐标下
-    return: numpy 3-D array 下一个时刻的位置和动量 staging坐标下
-    """
-
-    # 首先演化半步控温
-    p_array[
-        0] = o1 * p_array[0] + o2 * np.sqrt(M) * np.random.standard_normal(N)
-    for j in range(1, P):
-        p_array[j] = o1 * p_array[j] + o2 * np.sqrt(
-            (j + 1) / j * M) * np.random.standard_normal(N)
-    # 再演化半步内势力
-    s_array[0] = s_array[0] + M_inv * p_array[0] * dt * 0.5
-    for j in range(1, P):
-        s_j = d1 * s_array[j] + d2 / omega_P * j / (j + 1) * M_inv * p_array[j]
-        p_array[j] = -omega_P * d2 * (j + 1) / j * M * s_array[j] + np.cos(
-            omega_P * dt * 0.5) * p_array[j]
-        s_array[j] = s_j
-    # 再演化一步动量
-    p_array = p_array - nabla_phi_potential(s_array) * dt
-    # 再演化半步内势力
-    s_array[0] = s_array[0] + M_inv * p_array[0] * dt * 0.5
-    for j in range(1, P):
-        s_j = d1 * s_array[j] + d2 / omega_P * j / (j + 1) * M_inv * p_array[j]
-        p_array[j] = -omega_P * d2 * (j + 1) / j * M * s_array[j] + np.cos(
-            omega_P * dt * 0.5) * p_array[j]
-        s_array[j] = s_j
-    # 最后演化半步控温
-    p_array[
-        0] = o1 * p_array[0] + o2 * np.sqrt(M) * np.random.standard_normal(N)
-    for j in range(1, P):
-        p_array[j] = o1 * p_array[j] + o2 * np.sqrt(
-            (j + 1) / j * M) * np.random.standard_normal(N)
+    p_array = p_array - \
+        nabla_phi_potential(s_array, nabla_potential) * dt * 0.5
 
     return s_array, p_array
 
@@ -242,7 +214,8 @@ def M_thermal_digonal_estimator_p(x_0, T_0):
     x_0: 1-d array length=N
     T_0: 2-d array N*N the eigenvector of Hessian matrix
     """
-    pass 
+
+    pass
 
 
 def M_thermal_estimator_p(x_array, T_0):
@@ -251,5 +224,6 @@ def M_thermal_estimator_p(x_array, T_0):
     x_0: 1-d array length=N
     T_0: 2-d array N*N the eigenvector of Hessian matrix
     """
-    pass 
+    pass
+
 

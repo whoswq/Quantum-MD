@@ -21,19 +21,19 @@ using std::stringstream;
 using std::to_string;
 
 const int N = 3;            // 系统的自由度
-const int P = 128;          // beads数量
-const int steps = 200000;   // 演化的总步数
-const int step_leap = 400;  // 跳过step_leap步记录一次位置和动量
+const int P = 256;          // beads数量
+const int steps = 200000;    // 演化的总步数
+const int step_leap = 50;  // 跳过step_leap步记录一次位置和动量 计算时间关联函数的最小步长
 const double dt =
     0.1 / sqrt(P);  // 时间步长 对于BAOAB_PILD算法，时间步长最长为2/omega_P
-const double m = 1;       // 质量矩阵的对角元
-const double beta = 0.5;  // 温度的倒数
+const double m = 1;     // 质量矩阵的对角元
+const double beta = 2;  // 温度的倒数
 const double omega_P = sqrt(P) / beta;
-const double gama_ad = 0.1;  // 绝热参数
+const double gama_ad = 0.01;  // 绝热参数
 const double omega_ad =
     sqrt(P / gama_ad) / beta;  // 加入绝热参数后的内势力角频率
-const int n_traj = 50;  // 计算时间关联函数时所用轨线的数目
-const int PIMD_steps = 10000;  // 选取初始值时PIMD演化的步数
+const int n_traj = 100;  // 计算时间关联函数时所用轨线的数目
+const int PIMD_steps = 40000;  // 选取初始值时PIMD演化的步数
 
 // 定义一些BAOAB_PILD函数常用的常数
 const double c1_PILD = exp(-omega_ad * dt);
@@ -63,14 +63,14 @@ double M_M_thermal_inv[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
 double M[N];      // 质量矩阵 1-D array
 double M_inv[N];  // 质量矩阵的逆 1-D array
 
+// 尽量不要动下面定义的变量
+int t_steps_max = steps / step_leap - 50;
 double x_array[P][N];     // 储存所有beads位置
 double p_array[P][N];     // 储存所有beads动量
 double nabla_V[N] = {0};  // 储存单个beads在Cartesian坐标下的势能梯度
 double nabla_phi[P][N] = {0};       // 每个bead在staging坐标下的受力
 double traj_x[n_traj][P][N] = {0};  // 储存选定为初始值的平衡构型
 double traj_p[n_traj][P][N] = {0};
-double config_list[n_traj][2][steps][N] = {0};  // 储存实时间动力学的构型
-const int t_steps_max = steps / step_leap - 50;
 double x_list_traj[n_traj][steps / step_leap][N];  // 所有轨线不同时刻的位置
 double p_list_traj[n_traj][steps / step_leap][N];  // 所有轨线不同时刻的动量
 double t_list[steps / step_leap];  // 记录每个构型对应的演化时间
@@ -478,24 +478,27 @@ int main() {
       p_array[j][k] = distribution(generator);
     }
   }
+
   // 用于储存数据
   /*
-stringstream fmt1;
-fmt1 << "quartic_P_128"
-     << ".txt";
-ofstream OutFile1(fmt1.str());
-*/
+  stringstream fmt1;
+  fmt1 << "quartic_P_128"
+      << ".txt";
+  ofstream OutFile1(fmt1.str());
+  */
   // 用于判断PIMD是否达到平衡
+
   double T = 0;
   cout << "------------------START--PIMD------------------" << endl;
   cout << "the number of beads is " << P << endl;
   cout << "the setting temperature is " << (double)1 / beta << endl;
-  cout << "total steps is " << steps << endl;
+  cout << "total steps is " << PIMD_steps << endl;
+
   for (int i = 0; i < PIMD_steps; i++) {
     BAOAB(x_array, p_array, nabla_Harmonic_potential, beta, omega_P, c1_PILD,
           c2_PILD, d1_PILD, d2_PILD);
-    T += temperature(p_array) / steps;
-    if (i % 2000 == 0) {
+    T += temperature(p_array) / PIMD_steps;
+    if (i % 20000 == 0) {
       t_end = time(NULL);
       printf("in PIMD, step = %d, time has been used = %.3f s\n", i,
              difftime(t_end, t_start));
@@ -525,9 +528,10 @@ ofstream OutFile1(fmt1.str());
   cout << "-------------------END--PIMD-----------------" << endl;
   cout << "-----------BEIGN--REAL--TIME--DYNAMICS-------" << endl;
   generate_p_init(M_thermal_inv, p_init_array);
+
   for (int k = 0; k < n_traj; k++) {
     // 这里尝试将演化到平衡的PIMD的构型拿过来直接使用
-    // 更新x_array中的数据
+    // 更新x_array p_array中的数据
     for (int r = 0; r < N; r++) {
       for (int s = 0; s < P; s++) {
         x_array[s][r] = traj_x[k][s][r];
@@ -540,13 +544,11 @@ ofstream OutFile1(fmt1.str());
     }
     // 开始每一条轨线的演化
     for (int j = 0; j < steps; j++) {
-      int cnt = 0;
-      if (j % step_leap == 0) {
-        cnt += 1;
+      if (j % step_leap == 0) {  // 每隔step_leap步储存一个构型
         for (int r = 0; r < N; r++) {
-          x_list_traj[k][cnt][r] = x_array[0][r];
-          p_list_traj[k][cnt][r] = p_array[0][r];
-          t_list[cnt] = j * dt;
+          x_list_traj[k][j / step_leap][r] = x_array[0][r];
+          p_list_traj[k][j / step_leap][r] = p_array[0][r];
+          t_list[j / step_leap] = j * dt;
         }
       }
       BAOAB_PILD(x_array, p_array, nabla_Harmonic_potential, beta, omega_ad,
@@ -554,12 +556,27 @@ ofstream OutFile1(fmt1.str());
       if (j % 10000 == 0) {
         t_end = time(NULL);
         printf(
-            "in PILD, in %dth trajactory ,step = %d, time has been used = %.3f "
+            "in PILD, in %dth trajactory ,step = %d, time has been used = %.1f "
             "s\n",
             k, j, difftime(t_end, t_start));
       }
     }
   }
+  // 计算时间关联函数
+  stringstream fmt1;  // 通过文件存储时间关联函数的数据
+  fmt1 << "3-D_Harmonic"
+       << ".txt";
+  cout << t_list[1] << endl;
+  ofstream OutFile1(fmt1.str());
+  for (int t = 0; t < t_steps_max; t++) {
+    OutFile1 << std::setiosflags(std::ios::scientific | std::ios::showpos)
+             << t_list[t] << "  ";
+    OutFile1 << std::setiosflags(std::ios::scientific | std::ios::showpos)
+             << p_kubo_corr_func(t) << "  \n";
+  }
+  OutFile1.close();
+  fmt1.clear();
+  cout << "-------------------END--PILD-----------------" << endl;
 
   int i;  // 让程序不要运行完就退出
   cin >> i;
