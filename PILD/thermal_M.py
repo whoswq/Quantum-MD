@@ -3,21 +3,29 @@ calculate the M_thermal
 """
 import numpy as np
 import numpy.linalg as liag
+import time
 
 N = 3  # the freedom of the system
-P = 200  # the number of beads
+P = 100  # the number of beads
 steps = 200000  # total steps of evolution
+step_leap = 100  # 计算热质量矩阵的间隔
 hbar = 1  # reduced Planck constant
-beta = 0.5  # the inverse of temperature
+k_B = 3.16671e-6  # Boltzman constant in Hartree units
+tem = 100  # temperature
+beta = 1 / (k_B * tem)  # the inverse of temperature
 omega_P = np.sqrt(P) / (beta * hbar)  # the frequency of internal force
-dt = 0.1 / omega_P  # time step
-M = np.array([])  # mass matrix
-M_inv = np.array([])
+dt = 10e-7 / omega_P  # time step
+m_H = np.array([1837, 1837, 1837])
+m_O = np.array([1823, 1823, 1823]) * 16
+M = m_H * m_O / (m_H + m_O)
+sqrt_M = np.sqrt(M)
+M_inv = 1 / M
+sqrt_M_inv = np.sqrt(M_inv)
 # params of morse potential
-De = 20
-alpha = 2.0
-r_eq = 2.5
-# 选定一个标准的平衡构型
+De = 0.185
+alpha = 1.2102
+r_eq = 1.7799
+# 频率的理论值约为3887/cm
 
 
 def Morse_potential(x):
@@ -56,11 +64,9 @@ def Hessian_Morse_potential(x, dx=0.01):
     b1 = nabla_Morse_potential((x[0], x[1] - dx, x[2]))
     a2 = nabla_Morse_potential((x[0], x[1], x[2] + dx))
     b2 = nabla_Morse_potential((x[0], x[1], x[2] - dx))
-    return np.array([
-        [(a0[i] - b0[i]) / (2*dx) for i in range(3)],
-        [(a1[i] - b1[i]) / (2*dx) for i in range(3)],
-        [(a2[i] - b2[i]) / (2*dx) for i in range(3)]
-    ])
+    return np.array([[(a0[i] - b0[i]) / (2 * dx) for i in range(3)],
+                     [(a1[i] - b1[i]) / (2 * dx) for i in range(3)],
+                     [(a2[i] - b2[i]) / (2 * dx) for i in range(3)]])
 
 
 def staging_transf(x_array):
@@ -159,6 +165,7 @@ d1 = np.cos(omega_P * dt * 0.5)
 d2 = np.sin(omega_P * dt * 0.5)
 
 
+# 性能瓶颈
 def BAOAB(s_array, p_array, nabla_potential):
     """
     使用BAOAB的算法演化Lagevin方程
@@ -176,8 +183,7 @@ def BAOAB(s_array, p_array, nabla_potential):
             omega_P * dt * 0.5) * p_array[j]
         s_array[j] = s_j
     # 演化一步控温
-    p_array[
-        0] = c1 * p_array[0] + c2 * np.sqrt(M) * np.random.standard_normal(N)
+    p_array[0] = c1 * p_array[0] + c2 * sqrt_M * np.random.standard_normal(N)
     for j in range(1, P):
         p_array[j] = c1 * p_array[j] + c2 * np.sqrt(
             (j + 1) / j * M) * np.random.standard_normal(N)
@@ -208,22 +214,61 @@ def temperature(p_array):
     return T / (N * P)
 
 
-def M_thermal_digonal_estimator_p(x_0, T_0):
+def TQT_p(x):
     """
-    the diagonal term of M_thermal(ensemble average)
-    x_0: 1-d array length=N
-    T_0: 2-d array N*N the eigenvector of Hessian matrix
+    x: 1-d array length=N 当前位置
+    T_0: 2-d array N*N 受力平衡时的正交矩阵
     """
+    H = np.diag(sqrt_M_inv).dot(
+        Hessian_Morse_potential(x).dot(np.diag(sqrt_M_inv)))
+    eigenvalue, T = np.linalg.eigh(H)
+    Q_x = []
+    for w in eigenvalue:
+        if w >= 0:
+            u = beta * hbar * np.sqrt(w) / 2
+            Q_x.append(u / np.tanh(u))
+        else:
+            u = beta * hbar * np.sqrt(-w) / 2
+            Q_x.append(np.tanh(u) / u)
+    Q_x = np.diag(Q_x)
+    return T.dot(Q_x).dot(T.T)
 
-    pass
 
+# 选定一个标准的平衡构型
+x_eq = np.array([r_eq, 0, 0])
+# 构造质量加权的Hessian矩阵
+H = np.diag(sqrt_M_inv).dot(
+    Hessian_Morse_potential(x_eq).dot(np.diag(sqrt_M_inv)))
+eigenvalue, T_0 = np.linalg.eigh(H)
 
-def M_thermal_estimator_p(x_array, T_0):
-    """
-    the ensemble average of M_thermal
-    x_0: 1-d array length=N
-    T_0: 2-d array N*N the eigenvector of Hessian matrix
-    """
-    pass
-
-
+print("-" * 20 + "PROGRAM-BEGIN" + "-" * 20)
+print("calculate the thermal mass matrix")
+start = time.time()  # 记录程序运行时间
+# 首先构造PIMD的初始值 假设beads全在平衡位置且动量为0
+x_array = np.array([[r_eq, 0, 0] for i in range(P)], dtype=np.float64)
+x_array = staging_transf(x_array)
+p_array = np.zeros((P, N), dtype=np.float64)
+TQT = np.zeros((3, 3))
+tot = steps / step_leap
+T = 0
+for i in range(steps):
+    T += temperature(p_array) / steps
+    if i % step_leap == 0:
+        # staging变换中第一个bead就是x_1
+        TQT += TQT_p(x_array[0]) / tot
+    x_array, p_array = BAOAB(x_array, p_array, nabla_Morse_potential)
+    if i % 1000 == 0:
+        print("step = %d, time = %.2f" % (i, time.time() - start))
+print("the setting temperature is %.4f" % (1 / beta))
+print("real temperature of sys is %.4f" % T)
+Q_corr_diagonal = np.diag(np.diagonal(T_0.T.dot(TQT).dot(T_0)))
+M_therm_diagonal = np.diag(sqrt_M).dot(T_0).dot(Q_corr_diagonal).dot(
+    T_0.T).dot(np.diag(sqrt_M))
+M_therm = np.diag(sqrt_M).dot(TQT).dot(np.diag(sqrt_M))
+np.savetxt("./M_therm_origin.txt", M_therm, fmt="%f", delimiter=", ")
+np.savetxt("./M_therm_diagonal.txt",
+           M_therm_diagonal,
+           fmt="%f",
+           delimiter=", ")
+print("total time = %.2f" % (time.time() - start))
+print("-" * 20 + "PROGRAME---END" + "-" * 20)
