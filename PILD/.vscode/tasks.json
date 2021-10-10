@@ -1,21 +1,19 @@
 {
     "version": "2.0.0",
-    "tasks": [ //注意这里的设置
-        {
-            "type": "shell",
-            "command": "E:/msys64/mingw64/bin/g++.exe",
-            "label": "g++",
+    "tasks": [{
+            "label": "compile",
+            "command": "g++",
             "args": [
                 "-g",
                 "${file}",
                 "-o",
-                "${workspaceFolder}/${fileBasenameNoExtension}.exe"
-            ], // 编译命令参数
+                "${fileDirname}/${fileBasenameNoExtension}"
+            ],
             "problemMatcher": {
                 "owner": "cpp",
                 "fileLocation": [
                     "relative",
-                    "\\"
+                    "${workspaceRoot}"
                 ],
                 "pattern": {
                     "regexp": "^(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
@@ -26,10 +24,10 @@
                     "message": 5
                 }
             },
-            "options": {
-                "cwd": "E:/msys64/mingw64/bin"
+            "group": {
+                "kind": "build",
+                "isDefault": true
             }
         }
-    ],
-   
+    ]
 }

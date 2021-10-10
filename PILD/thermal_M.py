@@ -217,7 +217,6 @@ def temperature(p_array):
 def TQT_p(x):
     """
     x: 1-d array length=N 当前位置
-    T_0: 2-d array N*N 受力平衡时的正交矩阵
     """
     H = np.diag(sqrt_M_inv).dot(
         Hessian_Morse_potential(x).dot(np.diag(sqrt_M_inv)))
