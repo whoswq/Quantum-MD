@@ -1,14 +1,16 @@
 """
 calculate the M_thermal
+
+使用16年文献附录中的算法计算热质量矩阵，可能有问题
 """
 import numpy as np
 import numpy.linalg as liag
 import time
 
 N = 3  # the freedom of the system
-P = 100  # the number of beads
+P = 500  # the number of beads
 steps = 200000  # total steps of evolution
-step_leap = 100  # 计算热质量矩阵的间隔
+step_leap = 50  # 计算热质量矩阵的间隔
 hbar = 1  # reduced Planck constant
 k_B = 3.16671e-6  # Boltzman constant in Hartree units
 tem = 100  # temperature
@@ -244,10 +246,12 @@ print("-" * 20 + "PROGRAM-BEGIN" + "-" * 20)
 print("calculate the thermal mass matrix")
 start = time.time()  # 记录程序运行时间
 # 首先构造PIMD的初始值 假设beads全在平衡位置且动量为0
-x_array = np.array([[r_eq, 0, 0] for i in range(P)], dtype=np.float64)
+x_array = np.array([[0.9*r_eq, 0, 0] for i in range(P)], dtype=np.float64)
 x_array = staging_transf(x_array)
 p_array = np.zeros((P, N), dtype=np.float64)
+# 构造一个空的矩阵用于存放TQT的系综平均值
 TQT = np.zeros((3, 3))
+# 选取的矩阵的总数目
 tot = steps / step_leap
 T = 0
 for i in range(steps):
@@ -264,8 +268,8 @@ Q_corr_diagonal = np.diag(np.diagonal(T_0.T.dot(TQT).dot(T_0)))
 M_therm_diagonal = np.diag(sqrt_M).dot(T_0).dot(Q_corr_diagonal).dot(
     T_0.T).dot(np.diag(sqrt_M))
 M_therm = np.diag(sqrt_M).dot(TQT).dot(np.diag(sqrt_M))
-np.savetxt("./M_therm_origin.txt", M_therm, fmt="%f", delimiter=", ")
-np.savetxt("./M_therm_diagonal.txt",
+np.savetxt("./M_therm_morse_origin.txt", M_therm, fmt="%f", delimiter=", ")
+np.savetxt("./M_therm_morse_diagonal.txt",
            M_therm_diagonal,
            fmt="%f",
            delimiter=", ")

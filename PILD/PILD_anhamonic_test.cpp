@@ -25,7 +25,7 @@ using std::to_string;
 
 const int N = 1;           // 系统的自由度
 const int P = 500;         // beads数量
-const int steps = 250000;  // 演化的总步数
+const int steps = 500000;  // 演化的总步数
 const int step_leap =
     25;  // 跳过step_leap步记录一次位置和动量 计算时间关联函数的最小步长
 const double dt =
@@ -36,14 +36,14 @@ const double omega_P = sqrt(P) / beta;
 const double gama_ad = 10e-6;  // 绝热参数
 const double omega_ad =
     sqrt(P / gama_ad) / beta;  // 加入绝热参数后的内势力角频率
-const int n_traj = 100;  // 计算时间关联函数时所用轨线的数目
+const int n_traj = 200;  // 计算时间关联函数时所用轨线的数目
 const int PIMD_steps = 500000;  // 选取初始值时PIMD演化的步数
 const int n_atom = 1;
 
-double M_thermal[N][N] = {{3.93462}};
-double M_thermal_inv[N][N] = {{0.25415}};
-double M_thermal_M_inv[N][N] = {{3.93462}};
-double M_M_thermal_inv[N][N] = {{0.25415}};
+double M_thermal[N][N] = {{1.36909}};
+double M_thermal_inv[N][N] = {{1.0 / 1.36909}};
+double M_thermal_M_inv[N][N] = {{1.36909}};
+double M_M_thermal_inv[N][N] = {{1.0 / 1.36909}};
 double M[N];      // 质量矩阵 1-D array
 double M_inv[N];  // 质量矩阵的逆 1-D array
 
@@ -154,7 +154,7 @@ double phi_potential(double (&s_chain)[P][N],
   for (int j = 0; j < P; j++) {
     phi += potential(s_chain[j]);
   }
-  staging_transf(s_chain);
+  staging_transf(s_chain); // 最后需要将Cartesian坐标变换为staging坐标
   return (double)phi / P;
 }
 
@@ -311,7 +311,8 @@ const double d2_PILD = sin(omega_ad * dt / 2);
 引入了绝热参数的概念，认为有效力只用一步采样就可以得到比较准确的结果？
 x_chain: double 2-D array 表示前一个时刻所有beads的位置
 p_chain: double 2-D array 表示前一个时刻所有beads的动量
-没有返回值 直接修传入的数组
+nabla_potential: void 返回给定势能的梯度
+之后是一些参数
 */
 void BAOAB_PILD(double (&s_chain)[P][N],
                 double (&p_chain)[P][N],
@@ -416,7 +417,7 @@ kubo形式的动量关联函数
 t_steps: int < steps / step_leap - cnt 计算t_steps时间节点上的平均值
 cnt: int 每条轨线上计算平均值的次数
 */
-double p_kubo_corr_func(int t_steps, int cnt = 50) {
+double p_kubo_corr_func(int t_steps, int cnt = 90) {
   if (cnt + t_steps > steps / step_leap) {
     throw("error in p_kubo_func");
     return 0;
@@ -425,7 +426,7 @@ double p_kubo_corr_func(int t_steps, int cnt = 50) {
   for (int j = 0; j < n_traj; j++) {  // 对所有轨线平均
     for (int m = 0; m < cnt; m++) {   // 对同一条轨线作时间平均
       double tot = 0;
-      for (int r = 0; r < N; r++) {
+      for (int r = 0; r < N; r++) {   // 计算某两个时间点之间的关联函数
         double var = 0;
         for (int s = 0; s < N; s++) {
           var += M_M_thermal_inv[r][s] * p_list_traj[j][t_steps + m][s];
@@ -508,7 +509,7 @@ int main() {
   time_t t_start, t_end;  // 记录程序运行时间
   t_start = time(NULL);
 
-  for (int k = 0; k < N; k++)  //
+  for (int k = 0; k < N; k++)  // 构造PIMD的初始条件
   {
     for (int j = 0; j < P; j++) {
       x_array[j][k] = 0;
@@ -523,7 +524,7 @@ int main() {
   cout << "the setting temperature is " << beta << endl;
   cout << "total steps is " << PIMD_steps << endl;
 
-  for (int i = 0; i < PIMD_steps; i++) {
+  for (int i = 0; i < PIMD_steps; i++) {  // 用PIMD对量子正则分布进行抽样
     BAOAB(x_array, p_array, nabla_quartic_potential, beta, omega_P, c1_PILD,
           c2_PILD, d1_PILD, d2_PILD);
     T += temperature(p_array) / PIMD_steps;

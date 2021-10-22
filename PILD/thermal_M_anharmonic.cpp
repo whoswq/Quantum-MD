@@ -26,10 +26,10 @@ using std::stringstream;
 using std::to_string;
 
 const int N = 1;                   // 系统的自由度
-const int P = 200;                 // beads数量
+const int P = 500;                 // beads数量
 const int steps = 10000000;         // 演化的总步数
-const double dt = 0.05 / sqrt(P);  // 时间步长
-const int step_leap = 50;          // 计算热质量矩阵的时间间隔
+const double dt = 0.2 / sqrt(P);  // 时间步长
+const int step_leap = 25;          // 计算热质量矩阵的时间间隔
 // double h_bar = 1; // 约化Planck常数
 // M = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}; // 质量矩阵
 const double m = 1;  // 质量矩阵的对角元
@@ -320,7 +320,7 @@ double temperature(double (&p_chain)[P][N]) {
 
 /*
 用于计算热质量矩阵
-x: double 1-D array N 当前位置
+x: double 1-D array N 必须是cartesian坐标中的位置
 */
 double M_therm(double (&x)[N], double (*Mhessian)(double (&)[N])) {
   double u = beta / 2.0;
@@ -333,6 +333,24 @@ double M_therm(double (&x)[N], double (*Mhessian)(double (&)[N])) {
     return tanh(u) / u;
   }
 }
+
+/*
+经过测试之后发现如果只用M_thermal的primitiv estimator，收敛性较差
+这里仿照计算势能的方法写一个计算在所有beads上平均的M_thermal
+x: double 2-D array P*N 所有beads的直角坐标
+*/
+double M_therm_average(double (*Mhessian)(double (&)[N])){
+  // 在演化的过程中x_array中储存着beads的staging坐标，首先应变换回Cartesian坐标
+  staging_transf_inv(x_array);
+  double M_t = 0;
+  for (int j=0; j < P; j++){
+    M_t += Mhessian(x_array[j]);
+  }
+  // 最后还要变回去
+  staging_transf(x_array);
+  return M_t / P;
+}
+
 int main() {
   for (int i = 0; i < N; i++) {
     M[i] = m;
@@ -369,7 +387,7 @@ int main() {
       cout << "step " << i << ", time  " << (end - start) << " s" << endl;
     }
     if (i % step_leap == 0) {
-      M_t += M_therm(x_array[0], Mhessian_asy_aharmonic) / steps * step_leap;
+      M_t += M_therm_average(Mhessian_quartic) / steps * step_leap;
     }
   }
   cout << "temperature of the system is " << T << ", ";
